@@ -17,55 +17,47 @@ import java.util.Map;
 @Service
 public class TransactionalService {
 
-    @Autowired
-    private UserService userService;
-    @Autowired
-    private TransactionalRepository transactionalRepository;
+	@Autowired
+	private UserService userService;
 
-    @Autowired
-    private NotificationService notificationService;
+	@Autowired
+	private TransactionalRepository transactionalRepository;
 
-    @Autowired
-    private RestTemplate restTemplate;
+	@Autowired
+	private NotificationService notificationService;
 
-    public Transaction createTransactional(TransactionalDTO transactionDTO) throws Exception {
-        User sender = this.userService.findUserById(transactionDTO.senderId());
-        User receiver = this.userService.findUserById(transactionDTO.receiverId());
+	@Autowired
+	private AuthorizationService authorizationService;
 
-        userService.validatedTransactional(sender, transactionDTO.value());
+	public Transaction createTransactional(TransactionalDTO transactionDTO) throws Exception {
+		User sender = this.userService.findUserById(transactionDTO.senderId());
+		User receiver = this.userService.findUserById(transactionDTO.receiverId());
 
-        boolean isAuthorized = this.authorizeTransaction(sender, transactionDTO.value());
+		userService.validatedTransactional(sender, transactionDTO.value());
 
-        if (!isAuthorized) {
-            throw new Exception("Transação não autorizada");
-        }
+		boolean isAuthorized = this.authorizationService.authorizeTransaction(sender, transactionDTO.value());
 
-        Transaction newTransaction = new Transaction();
-        newTransaction.setAmount(transactionDTO.value());
-        newTransaction.setSender(sender);
-        newTransaction.setReceiver(receiver);
-        newTransaction.setTimeStamps(LocalDateTime.now());
+		if (!isAuthorized) {
+			throw new Exception("Transação não autorizada");
+		}
 
-        sender.setBalance(sender.getBalance().subtract(transactionDTO.value()));
-        receiver.setBalance(receiver.getBalance().add(transactionDTO.value()));
+		Transaction newTransaction = new Transaction();
+		newTransaction.setAmount(transactionDTO.value());
+		newTransaction.setSender(sender);
+		newTransaction.setReceiver(receiver);
+		newTransaction.setTimeStamps(LocalDateTime.now());
 
-        this.transactionalRepository.save(newTransaction);
-        userService.saveUser(sender);
-        userService.saveUser(receiver);
+		sender.setBalance(sender.getBalance().subtract(transactionDTO.value()));
+		receiver.setBalance(receiver.getBalance().add(transactionDTO.value()));
 
-        this.notificationService.sendNotification(sender, "Transação realizada com sucesso!");
-        this.notificationService.sendNotification(receiver, "Transação recebida com sucesso!");
+		this.transactionalRepository.save(newTransaction);
+		userService.saveUser(sender);
+		userService.saveUser(receiver);
 
-        return newTransaction;
-    }
+		this.notificationService.sendNotification(sender, "Transação realizada com sucesso!");
+		this.notificationService.sendNotification(receiver, "Transação recebida com sucesso!");
 
-    public boolean authorizeTransaction(User sender, BigDecimal value) {
-        ResponseEntity<Map> authorizationResponse = restTemplate
-                .getForEntity("https://run.mocky.io/v3/f965da04-d65a-45bd-856e-8a35e0ab67ae", Map.class);
+		return newTransaction;
+	}
 
-        if (authorizationResponse.getStatusCode() == HttpStatus.OK) {
-            String message = (String) authorizationResponse.getBody().get("message");
-            return "Autorizado".equalsIgnoreCase(message);
-        } else return false;
-    }
 }
